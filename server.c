@@ -95,7 +95,7 @@ void send_message(char* s, int uid)
             {
                 if(write(clients[i]->sockfd, s, strlen(s)) < 0)
                 {
-                    printf("ERROR : write to descriptor\n");
+                    perror("ERROR : write to descriptor\n");
                     break;
                 }
             }
@@ -240,7 +240,7 @@ int main(int argc, char* argv[])
 
         if(connectFd < 0)
         {
-            perror("Error\n");
+            perror("Errors\n");
             exit(0);
         }
 
