@@ -181,7 +181,62 @@ void send_message_everyone(char* s)
     pthread_mutex_unlock(&clients_mutex);
 }
 
+void print_and_send_evryone(char* msg)
+{
+    printf("%s", msg);
+    send_message_everyone(msg);
+}
+
 void kick_person(char *name)
+{
+    char *msg = malloc(strlen(name)+20);
+    client_t* cli = search_client_by_name(name);
+    if(cli->admin == 1)
+    {
+        sprintf(msg, "Cannot Kick an admin\n");
+        print_and_send_evryone(msg);
+        return;
+    }
+    if(cli)
+    {
+        if(strcmp(cli->name, name) == 0)
+        {
+            sprintf(msg, "%s has been kicked\n", cli->name);
+            print_and_send_evryone(msg);
+            cli->leave_flag = 1;
+        }
+    }
+    else{
+        sprintf(msg, "Name not Found\n");
+        print_and_send_evryone(msg);
+    }
+    free(msg);
+    return;
+}
+
+void remove_admin(char *name)
+{
+    printf("%s\n", name);
+    char *msg = malloc(strlen(name)+20);
+    client_t* cli = search_client_by_name(name);
+    if(cli)
+    {
+        if(strcmp(cli->name, name) == 0)
+        {
+            sprintf(msg, "%s is not an admin anymore\n", cli->name);
+            print_and_send_evryone(msg);
+            cli->admin = 0;
+        }
+    }
+    else{
+        sprintf(msg, "Name not Found\n");
+        print_and_send_evryone(msg);
+    }
+    free(msg);
+    return;
+}
+
+void make_admin(char *name)
 {
     char *msg = malloc(strlen(name)+20);
     client_t* cli = search_client_by_name(name);
@@ -189,16 +244,14 @@ void kick_person(char *name)
     {
         if(strcmp(cli->name, name) == 0)
         {
-            sprintf(msg, "%s has been kicked\n", cli->name);
-            printf("%s", msg);
-            send_message_everyone(msg);
-            cli->leave_flag = 1;
+            sprintf(msg, "%s is now an admin\n", cli->name);
+            print_and_send_evryone(msg);
+            cli->admin = 1;
         }
     }
     else{
         sprintf(msg, "Name not Found\n");
-        printf("%s", msg);
-        send_message_everyone(msg);
+        print_and_send_evryone(msg);
     }
     free(msg);
     return;
@@ -211,6 +264,16 @@ void handle_commands(char *cmd)
     {
         free(msg);
         kick_person(cmd+6);
+    }
+    else if(strcmp(msg, "/admin") == 0)
+    {
+        free(msg);
+        make_admin(cmd+7);
+    }
+    else if(strcmp(msg, "/removeadmin")== 0)
+    {
+        free(msg);
+        remove_admin(cmd+13);
     }
 }
 
@@ -242,6 +305,8 @@ void handle_client(void *arg)
         printf("%s", buffer);
         send_message(buffer, cli->uid);
     }
+
+
 
     bzero(buffer, BUFFER_SIZE);
 

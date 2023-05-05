@@ -146,8 +146,20 @@ int main(int argc, char* argv[])
         printf("Enter the Name Correctly\n");
         return EXIT_FAILURE;
     }
-
     send(sockfd, name, NAME_LENGTH, 0);
+
+    //setting up admin rights.... password auth
+    // pritnf("Enter the Password for Admin Rights (Leave blank to continue without admin rights)\n");
+    // while(1)
+    // {
+    //     char pass[20];
+    //     printf("Enter : ");
+    //     fgets(pass, 20, stdin);
+    //     send(sockfd, pass, 20, 0);
+    //     recv(sockfd, buffer, BUFFER_SIZE, 0);
+
+    // }
+
     printf("======== WELCOME TO THE CHATROOM ========\n");
 
     //creating threads
