@@ -15,6 +15,7 @@
 
 static _Atomic unsigned int cli_count = 0;
 static int uid = 10;
+static char* pass = "mlsc2023";
 
 //Client Structure
 typedef struct{
@@ -191,14 +192,14 @@ void kick_person(char *name)
 {
     char *msg = malloc(strlen(name)+20);
     client_t* cli = search_client_by_name(name);
-    if(cli->admin == 1)
-    {
-        sprintf(msg, "Cannot Kick an admin\n");
-        print_and_send_evryone(msg);
-        return;
-    }
     if(cli)
     {
+        if(cli->admin == 1)
+        {
+            sprintf(msg, "Cannot Kick an admin\n");
+            print_and_send_evryone(msg);
+            return;
+        }
         if(strcmp(cli->name, name) == 0)
         {
             sprintf(msg, "%s has been kicked\n", cli->name);
@@ -216,7 +217,6 @@ void kick_person(char *name)
 
 void remove_admin(char *name)
 {
-    printf("%s\n", name);
     char *msg = malloc(strlen(name)+20);
     client_t* cli = search_client_by_name(name);
     if(cli)
@@ -275,6 +275,10 @@ void handle_commands(char *cmd)
         free(msg);
         remove_admin(cmd+13);
     }
+    else{
+        free(msg);
+        print_and_send_evryone("Wrong Command\n");
+    }
 }
 
 void handle_client(void *arg)
@@ -289,7 +293,7 @@ void handle_client(void *arg)
     printf("connected\n");
     cli->leave_flag = 0;
     
-    //name
+    //setting up name 
    fflush(stdin);
     if( recv(cli->sockfd, name, NAME_LENGTH, 0) <= 0 || strlen(name) < 2 || strlen(name) >= NAME_LENGTH-1)
     {
@@ -305,13 +309,31 @@ void handle_client(void *arg)
         printf("%s", buffer);
         send_message(buffer, cli->uid);
     }
-
-
-
     bzero(buffer, BUFFER_SIZE);
 
+    //setting up admin rights initially
+        fflush(stdin);
+        char pass_rec[20];
+        if( recv(cli->sockfd, pass_rec, 20, 0) <= 0)
+        {
+            perror("Rec failed");
+            cli->leave_flag = 1;
+        }
+        else{
+            str_trim_lf(pass_rec, strlen(pass_rec));
+            printf("%s\n", pass_rec);
+            printf("%s\n", pass);
+            if(strcmp(pass, pass_rec) == 0)
+            {
+                make_admin(cli->name);
+            }
+            else
+            {
+                char* msg = "Wrong Password\n";
+                send(cli->sockfd, msg,strlen(msg),0);
+            }
+        }
     
-
     while(1)
     {
         if(cli->leave_flag)
@@ -339,9 +361,20 @@ void handle_client(void *arg)
                 sprintf(msg, "%s : %s", cli->name, buffer);
                 send_message(msg, cli->uid);
                 
+                //commands section
+
                 if( buffer[0] -'/' == 0)
                 {
-                    handle_commands(buffer);
+                    if(cli->admin)
+                        handle_commands(buffer);
+                    else 
+                    {
+                        //print_and_send_evryone("You are not an Admin\n");
+                        char *msg = "You are not an admin\n";
+                        printf("%s", msg);
+                        send(cli->sockfd, msg, strlen(msg), 0);
+                    }
+
                 }
                 bzero(buffer, strlen(buffer));
             }
