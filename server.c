@@ -158,25 +158,47 @@ client_t* search_client_by_name(char *name)
             }
         }
     }
+    return NULL;
+}
+
+void send_message_everyone(char* s)
+{
+    pthread_mutex_lock(&clients_mutex);
+
+    for(int i = 0; i<MAX_CLIENTS; i++)
+    {
+        if(clients[i])
+        {
+            if(write(clients[i]->sockfd, s, strlen(s)) < 0)
+            {
+                perror("ERROR : write to descriptor\n");
+                break;
+            }
+            
+        }
+    }
+
+    pthread_mutex_unlock(&clients_mutex);
 }
 
 void kick_person(char *name)
 {
     char *msg = malloc(strlen(name)+20);
     client_t* cli = search_client_by_name(name);
-    // printf("%s\n", cli->name);
-    // printf("%d\n", cli->uid);
-    if(strcmp(cli->name, name) == 0)
+    if(cli)
     {
-        sprintf(msg, "%s has been kicked\n", cli->name);
-        printf("%s", msg);
-        send_message(msg, cli->uid);
-        cli->leave_flag = 1;
+        if(strcmp(cli->name, name) == 0)
+        {
+            sprintf(msg, "%s has been kicked\n", cli->name);
+            printf("%s", msg);
+            send_message_everyone(msg);
+            cli->leave_flag = 1;
+        }
     }
     else{
         sprintf(msg, "Name not Found\n");
         printf("%s", msg);
-        //send_message(msg, cli->uid);
+        send_message_everyone(msg);
     }
     free(msg);
     return;
@@ -231,9 +253,7 @@ void handle_client(void *arg)
         {
             break;
         }
-        //bzero(buffer, BUFFER_SIZE);
         int recieve = recv(cli->sockfd, buffer, BUFFER_SIZE, 0);
-        //printf("%s\n", buffer);
         if(strcmp(buffer,"exit") == 0)
         {
             sprintf(buffer, "%s has left\n", cli->name);
@@ -245,6 +265,10 @@ void handle_client(void *arg)
         {
             if(strlen(buffer) > 0)
             {
+                if(cli->leave_flag)
+                {
+                    break;
+                }
                 printf("%s : %s\n", cli->name,buffer);
                 char msg[strlen(buffer) + strlen(cli->name) + 3];
                 sprintf(msg, "%s : %s", cli->name, buffer);
@@ -269,7 +293,6 @@ void handle_client(void *arg)
     free(cli);
     cli_count--;
     pthread_detach(pthread_self());
-
     return;
 }
 
@@ -351,5 +374,3 @@ int main(int argc, char* argv[])
 
     return EXIT_SUCCESS;
 }
-
-
