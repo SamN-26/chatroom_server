@@ -22,6 +22,7 @@ typedef struct{
     int sockfd;
     int uid;
     char name[NAME_LENGTH];
+    int admin;
 }client_t;
 
 client_t *clients[MAX_CLIENTS];
@@ -64,6 +65,14 @@ void queue_add(client_t* cl)
     pthread_mutex_unlock(&clients_mutex);
 }
 
+void check()
+{
+    for(int i = 0; i<MAX_CLIENTS; i++)
+    {
+        printf("%p\n", clients[i]);
+    }
+}
+
 void queue_remove(int uid)
 {
     pthread_mutex_lock(&clients_mutex);
@@ -74,14 +83,16 @@ void queue_remove(int uid)
         {
             if(clients[i]->uid == uid)
             {
-                clients[i] == NULL;
+                clients[i] = NULL;
                 break;                 
             }
         }
     }
-
+    // check();
     pthread_mutex_unlock(&clients_mutex);
 }
+
+
 
 void send_message(char* s, int uid)
 {
@@ -149,19 +160,18 @@ void handle_client(void *arg)
 
     bzero(buffer, BUFFER_SIZE);
 
+    
+
     while(1)
     {
         if(leave_flag)
         {
             break;
         }
-        bzero(buffer, BUFFER_SIZE);
-        //sprintf(buffer, "%s : ", cli->name);
-        error(write(cli->sockfd, buffer, strlen(buffer)), "Error on Write\n");
-        bzero(buffer, BUFFER_SIZE);
+        //bzero(buffer, BUFFER_SIZE);
         int recieve = recv(cli->sockfd, buffer, BUFFER_SIZE, 0);
-        
-        if(strcmp(buffer,"exit") == 13)
+        //printf("%s\n", buffer);
+        if(strcmp(buffer,"exit") == 0)
         {
             sprintf(buffer, "%s has left\n", cli->name);
             printf("%s", buffer);
@@ -172,8 +182,12 @@ void handle_client(void *arg)
         {
             if(strlen(buffer) > 0)
             {
-                send_message(buffer, cli->uid);
-                printf("%s", buffer);
+                
+                printf("%s : %s\n", cli->name,buffer);
+                char msg[strlen(buffer) + strlen(cli->name) + 3];
+                sprintf(msg, "%s : %s", cli->name, buffer);
+                send_message(msg, cli->uid);
+
                 bzero(buffer, strlen(buffer));
             }
         }
@@ -185,6 +199,7 @@ void handle_client(void *arg)
         bzero(buffer, BUFFER_SIZE);
     }
     close(cli->sockfd);
+    printf("Removing now\n");
     queue_remove(cli->uid);
     free(cli);
     cli_count--;

@@ -50,7 +50,7 @@ void error(char *msg)
 void send_msg_handler()
 {
     char buffer[BUFFER_SIZE] = {};
-    char msg[BUFFER_SIZE + NAME_LENGTH + 5] = {};
+    // msg[BUFFER_SIZE + NAME_LENGTH + 5] = {};
     
     while(1)
     {
@@ -60,19 +60,22 @@ void send_msg_handler()
 
         if(strcmp(buffer, "exit") == 0)
         {
+            if(write(sockfd, buffer, strlen(buffer)) < 0)
+            {
+                perror("Unable to write\n");
+            }
             break;
         }
         else
         {
-            sprintf(msg, "%s : %s\n", name,  buffer);
-            if(write(sockfd, msg, strlen(msg)) < 0)
+            if(write(sockfd, buffer, strlen(buffer)) < 0)
             {
                 perror("Unable to write\n");
             }
         }
 
         bzero(buffer, BUFFER_SIZE);
-        bzero(msg, BUFFER_SIZE+NAME_LENGTH +5);
+        //bzero(msg, BUFFER_SIZE+NAME_LENGTH +5);
     }
     catch_ctrl_c_and_exit(2);
 }
@@ -88,7 +91,7 @@ void recv_msg_handler()
 
         if(recieve > 0)
         {
-            printf("%s\n", msg);
+            printf("%s\n",msg);
             str_overwrite_stdout();
         }
         else if(recieve == 0)
