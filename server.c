@@ -23,6 +23,7 @@ typedef struct{
     int uid;
     char name[NAME_LENGTH];
     int admin;
+    int leave_flag;
 }client_t;
 
 client_t *clients[MAX_CLIENTS];
@@ -130,16 +131,78 @@ void error(int check, char* msg)
         perror(msg);
 }
 
+char* extract(char* msg)
+{
+    char* wrd = malloc(strlen(msg));
+    for(int i = 0; i< strlen(msg); i++)
+    {
+        wrd[i] = msg[i];
+        if(msg[i] == ' ')
+        {
+            wrd[i] = '\0';
+            break;
+        }
+    }
+    return wrd;
+}
+
+client_t* search_client_by_name(char *name)
+{
+    for(int i = 0; i<MAX_CLIENTS; i++)
+    {
+        if(clients[i])
+        {
+            if(strcmp(clients[i]->name, name) == 0)
+            {
+                return clients[i];
+            }
+        }
+    }
+}
+
+void kick_person(char *name)
+{
+    char *msg = malloc(strlen(name)+20);
+    client_t* cli = search_client_by_name(name);
+    // printf("%s\n", cli->name);
+    // printf("%d\n", cli->uid);
+    if(strcmp(cli->name, name) == 0)
+    {
+        sprintf(msg, "%s has been kicked\n", cli->name);
+        printf("%s", msg);
+        send_message(msg, cli->uid);
+        cli->leave_flag = 1;
+    }
+    else{
+        sprintf(msg, "Name not Found\n");
+        printf("%s", msg);
+        //send_message(msg, cli->uid);
+    }
+    free(msg);
+    return;
+}
+
+void handle_commands(char *cmd)
+{
+    char *msg = extract(cmd);
+    if(strcmp(msg, "/kick") == 0)
+    {
+        free(msg);
+        kick_person(cmd+6);
+    }
+}
+
 void handle_client(void *arg)
 {
     char buffer[BUFFER_SIZE];
     char name[NAME_LENGTH];
-    int leave_flag = 0;
+    
 
     cli_count++;
 
     client_t *cli = (client_t*) arg;
     printf("connected\n");
+    cli->leave_flag = 0;
     
     //name
    fflush(stdin);
@@ -147,7 +210,7 @@ void handle_client(void *arg)
     {
         perror("Rec failed");
         printf("Enter the Name Correctly\n");
-        leave_flag = 1;
+        cli->leave_flag = 1;
     }
     else{
         strcpy(cli->name, name);
@@ -164,7 +227,7 @@ void handle_client(void *arg)
 
     while(1)
     {
-        if(leave_flag)
+        if(cli->leave_flag)
         {
             break;
         }
@@ -176,30 +239,32 @@ void handle_client(void *arg)
             sprintf(buffer, "%s has left\n", cli->name);
             printf("%s", buffer);
             send_message(buffer, cli->uid);
-            leave_flag = 1;
+            cli->leave_flag = 1;
         }
         else if(recieve > 0)
         {
             if(strlen(buffer) > 0)
             {
-                
                 printf("%s : %s\n", cli->name,buffer);
                 char msg[strlen(buffer) + strlen(cli->name) + 3];
                 sprintf(msg, "%s : %s", cli->name, buffer);
                 send_message(msg, cli->uid);
-
+                
+                if( buffer[0] -'/' == 0)
+                {
+                    handle_commands(buffer);
+                }
                 bzero(buffer, strlen(buffer));
             }
         }
         else 
         {
             printf("ERROR : -1\n");
-            leave_flag = 1;
+            cli->leave_flag = 1;
         }
         bzero(buffer, BUFFER_SIZE);
     }
     close(cli->sockfd);
-    printf("Removing now\n");
     queue_remove(cli->uid);
     free(cli);
     cli_count--;
