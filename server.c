@@ -9,13 +9,22 @@
 #include <arpa/inet.h>
 #include <string.h>
 
-#define MAX_CLIENTS 10
+#define MAX_CLIENTS 20
 #define BUFFER_SIZE 2048
 #define NAME_LENGTH 32
+#define MAX_CLIENTS_CHANNEL 10
 
 static _Atomic unsigned int cli_count = 0;
 static int uid = 10;
 static char* pass = "mlsc2023";
+
+// //Channel Structure
+// typedef struct
+// {
+//     int client_uid[MAX_CLIENTS_CHANNEL];
+
+// };
+
 
 //Client Structure
 typedef struct{
@@ -25,6 +34,7 @@ typedef struct{
     char name[NAME_LENGTH];
     int admin;
     int leave_flag;
+    int ignored_uids[MAX_CLIENTS];
 }client_t;
 
 client_t *clients[MAX_CLIENTS];
@@ -67,6 +77,14 @@ void queue_add(client_t* cl)
     pthread_mutex_unlock(&clients_mutex);
 }
 
+void initialize_ignore(client_t* cli)
+{
+    for(int i = 0; i<MAX_CLIENTS; i++)
+    {
+        cli->ignored_uids[i] = 0;
+    }
+}
+
 void check()
 {
     for(int i = 0; i<MAX_CLIENTS; i++)
@@ -94,9 +112,7 @@ void queue_remove(int uid)
     pthread_mutex_unlock(&clients_mutex);
 }
 
-
-
-void send_message(char* s, int uid)
+void send_message(char* s, client_t *cli)
 {
     pthread_mutex_lock(&clients_mutex);
 
@@ -104,7 +120,7 @@ void send_message(char* s, int uid)
     {
         if(clients[i])
         {
-            if(clients[i]->uid != uid)
+            if(clients[i]->uid != cli->uid)
             {
                 if(write(clients[i]->sockfd, s, strlen(s)) < 0)
                 {
@@ -265,6 +281,34 @@ void change_name(client_t* cli, char *name)
     bcopy(name, cli->name, strlen(name));
 }
 
+void ignore_client(char* name, client_t *cli)
+{
+    int flag = 0;
+    client_t* ignored_cli = search_client_by_name(name);
+    if(ignored_cli)
+    {
+        for(int i = 0; i<MAX_CLIENTS; i++)
+        {
+            if(cli->ignored_uids[i] == 0)
+            {
+                cli->ignored_uids[i] = ignored_cli->uid;
+                flag = 1;
+                break;
+            }
+        }
+        if(flag)
+        {
+            char msg[strlen(ignored_cli->name) + 30];
+            sprintf(msg, "Ignoring %s's Messages\n", ignored_cli->name);
+            send(cli->sockfd, msg, strlen(msg), 0);
+        }
+    }
+    else
+    {
+        send(cli->sockfd, "Name not Found\n", strlen("Name not Found\n"), 0);
+    }
+}
+
 void handle_commands(char *cmd, client_t *cli)
 {
     char *msg = extract(cmd);
@@ -309,6 +353,11 @@ void handle_commands(char *cmd, client_t *cli)
         free(msg);
         change_name(cli, cmd+6);
     }
+    else if(strcmp(msg, "/ignore") == 0)
+    {
+        free(msg);
+        ignore_client(cmd+8, cli);
+    }
     else{
         free(msg);
         print_and_send_evryone("Wrong Command\n");
@@ -327,6 +376,10 @@ void handle_client(void *arg)
     printf("connected\n");
     cli->leave_flag = 0;
     
+    //setting up ignored_int array
+    initialize_ignore(cli);
+
+
     //setting up name 
    fflush(stdin);
     if( recv(cli->sockfd, name, NAME_LENGTH, 0) <= 0 || strlen(name) < 2 || strlen(name) >= NAME_LENGTH-1)
@@ -341,7 +394,7 @@ void handle_client(void *arg)
         bzero(buffer, strlen(buffer));
         sprintf(buffer, "%s has joined\n", cli->name);
         printf("%s", buffer);
-        send_message(buffer, cli->uid);
+        send_message(buffer, cli);
     }
     bzero(buffer, BUFFER_SIZE);
 
@@ -379,7 +432,7 @@ void handle_client(void *arg)
         {
             sprintf(buffer, "%s has left\n", cli->name);
             printf("%s", buffer);
-            send_message(buffer, cli->uid);
+            send_message(buffer, cli);
             cli->leave_flag = 1;
         }
         else if(recieve > 0)
@@ -393,7 +446,7 @@ void handle_client(void *arg)
                 printf("%s : %s\n", cli->name,buffer);
                 char msg[strlen(buffer) + strlen(cli->name) + 3];
                 sprintf(msg, "%s : %s", cli->name, buffer);
-                send_message(msg, cli->uid);
+                send_message(msg, cli);
                 
                 //commands section
 
