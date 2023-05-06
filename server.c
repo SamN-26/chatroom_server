@@ -34,7 +34,7 @@ typedef struct{
     char name[NAME_LENGTH];
     int admin;
     int leave_flag;
-    int ignored_uids[MAX_CLIENTS];
+    int ignored_by_uids[MAX_CLIENTS];
 }client_t;
 
 client_t *clients[MAX_CLIENTS];
@@ -51,7 +51,6 @@ void str_trim_lf(char* arr, int length)
 {
     for(int i = 0; i<length; i++)
     {
-        
         if(arr[i] == 13 || arr[i] == 10)
         {
             arr[i] = '\0';
@@ -81,9 +80,11 @@ void initialize_ignore(client_t* cli)
 {
     for(int i = 0; i<MAX_CLIENTS; i++)
     {
-        cli->ignored_uids[i] = 0;
+        cli->ignored_by_uids[i] = 0;
     }
 }
+
+
 
 void check()
 {
@@ -112,6 +113,18 @@ void queue_remove(int uid)
     pthread_mutex_unlock(&clients_mutex);
 }
 
+int ignore_check(client_t* cli1, client_t* cli2)
+{
+    for(int i = 0; i<MAX_CLIENTS; i++)
+    {
+        if(cli1->ignored_by_uids[i] == cli2->uid)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void send_message(char* s, client_t *cli)
 {
     pthread_mutex_lock(&clients_mutex);
@@ -120,7 +133,7 @@ void send_message(char* s, client_t *cli)
     {
         if(clients[i])
         {
-            if(clients[i]->uid != cli->uid)
+            if(clients[i]->uid != cli->uid && !(ignore_check(cli, clients[i])))
             {
                 if(write(clients[i]->sockfd, s, strlen(s)) < 0)
                 {
@@ -289,10 +302,10 @@ void ignore_client(char* name, client_t *cli)
     {
         for(int i = 0; i<MAX_CLIENTS; i++)
         {
-            if(cli->ignored_uids[i] == 0)
+            if(ignored_cli->ignored_by_uids[i] == 0)
             {
-                cli->ignored_uids[i] = ignored_cli->uid;
-                flag = 1;
+                ignored_cli->ignored_by_uids[i] = cli->uid;
+                flag = 1; 
                 break;
             }
         }
@@ -300,6 +313,34 @@ void ignore_client(char* name, client_t *cli)
         {
             char msg[strlen(ignored_cli->name) + 30];
             sprintf(msg, "Ignoring %s's Messages\n", ignored_cli->name);
+            send(cli->sockfd, msg, strlen(msg), 0);
+        }
+    }
+    else
+    {
+        send(cli->sockfd, "Name not Found\n", strlen("Name not Found\n"), 0);
+    }
+}
+
+void unmute_client(char* name, client_t *cli)
+{
+    int flag = 0;
+    client_t* to_be_unmted_cli = search_client_by_name(name);
+    if(to_be_unmted_cli)
+    {
+        for(int i = 0; i<MAX_CLIENTS; i++)
+        {
+            if(to_be_unmted_cli->ignored_by_uids[i] == cli->uid)
+            {
+                to_be_unmted_cli->ignored_by_uids[i] = 0;
+                flag = 1; 
+                break;
+            }
+        }
+        if(flag)
+        {
+            char msg[strlen(to_be_unmted_cli->name) + 30];
+            sprintf(msg, "No Longer ignoring %s's Messages\n", to_be_unmted_cli->name);
             send(cli->sockfd, msg, strlen(msg), 0);
         }
     }
@@ -353,10 +394,15 @@ void handle_commands(char *cmd, client_t *cli)
         free(msg);
         change_name(cli, cmd+6);
     }
-    else if(strcmp(msg, "/ignore") == 0)
+    else if(strcmp(msg, "/mute") == 0)
     {
         free(msg);
-        ignore_client(cmd+8, cli);
+        ignore_client(cmd+6, cli);
+    }
+    else if(strcmp(msg, "/unmute") == 0)
+    {
+        free(msg);
+        unmute_client(cmd+8, cli);
     }
     else{
         free(msg);
