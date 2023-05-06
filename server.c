@@ -257,23 +257,57 @@ void make_admin(char *name)
     return;
 }
 
-void handle_commands(char *cmd)
+void change_name(client_t* cli, char *name)
+{
+    char msg[strlen(name) + 20];
+    sprintf(msg, "%s's name changed to %s\n", cli->name, name);
+    print_and_send_evryone(msg);
+    bcopy(name, cli->name, strlen(name));
+}
+
+void handle_commands(char *cmd, client_t *cli)
 {
     char *msg = extract(cmd);
     if(strcmp(msg, "/kick") == 0)
     {
         free(msg);
-        kick_person(cmd+6);
+        if(cli->admin)
+        {
+            kick_person(cmd+6);
+        }
+        else
+        {
+            print_and_send_evryone("Admin Rights Required\n");
+        }
     }
     else if(strcmp(msg, "/admin") == 0)
     {
         free(msg);
-        make_admin(cmd+7);
+        if(cli->admin)
+        {
+            make_admin(cmd+7);
+        }
+        else
+        {
+            print_and_send_evryone("Admin Rights Required\n");
+        }
     }
     else if(strcmp(msg, "/removeadmin")== 0)
     {
         free(msg);
-        remove_admin(cmd+13);
+        if(cli->admin)
+        {
+            remove_admin(cmd+13);
+        }
+        else
+        {
+            print_and_send_evryone("Admin Rights Required\n");
+        }
+    }
+    else if(strcmp(msg, "/name") == 0)
+    {
+        free(msg);
+        change_name(cli, cmd+6);
     }
     else{
         free(msg);
@@ -341,7 +375,7 @@ void handle_client(void *arg)
             break;
         }
         int recieve = recv(cli->sockfd, buffer, BUFFER_SIZE, 0);
-        if(strcmp(buffer,"exit") == 0)
+        if(strcmp(buffer,"/leave") == 0)
         {
             sprintf(buffer, "%s has left\n", cli->name);
             printf("%s", buffer);
@@ -365,16 +399,7 @@ void handle_client(void *arg)
 
                 if( buffer[0] -'/' == 0)
                 {
-                    if(cli->admin)
-                        handle_commands(buffer);
-                    else 
-                    {
-                        //print_and_send_evryone("You are not an Admin\n");
-                        char *msg = "You are not an admin\n";
-                        printf("%s", msg);
-                        send(cli->sockfd, msg, strlen(msg), 0);
-                    }
-
+                    handle_commands(buffer, cli);
                 }
                 bzero(buffer, strlen(buffer));
             }

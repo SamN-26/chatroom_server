@@ -58,7 +58,7 @@ void send_msg_handler()
         fgets(buffer, BUFFER_SIZE, stdin);
         str_trim_lf(buffer, BUFFER_SIZE);
 
-        if(strcmp(buffer, "exit") == 0)
+        if(strcmp(buffer, "/leave") == 0)
         {
             if(write(sockfd, buffer, strlen(buffer)) < 0)
             {
