@@ -64,7 +64,7 @@ void send_msg_handler()
             {
                 perror("Unable to write\n");
             }
-            break;
+            exit(0);
         }
         else
         {
