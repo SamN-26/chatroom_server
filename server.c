@@ -352,17 +352,17 @@ void kick_person(char *name, client_t* cli)
     return;
 }
 
-void remove_admin(char *name)
+void remove_admin(char *name, client_t* cli)
 {
     char *msg = malloc(strlen(name)+20);
-    client_t* cli = search_client_by_name(name);
-    if(cli)
+    client_t* target_cli = search_client_by_name_in_channel(name, cli);
+    if(target_cli)
     {
-        if(strcmp(cli->name, name) == 0)
+        if(strcmp(target_cli->name, name) == 0)
         {
-            sprintf(msg, "%s is not an admin anymore\n", cli->name);
+            sprintf(msg, "%s is not an admin anymore\n", target_cli->name);
             send_message_everyone_in_channel(msg, cli, 1);
-            cli->admin = 0;
+            target_cli->admin = 0;
         }
     }
     else{
@@ -373,17 +373,17 @@ void remove_admin(char *name)
     return;
 }
 
-void make_admin(char *name)
+void make_admin(char *name, client_t* cli)
 {
     char *msg = malloc(strlen(name)+20);
-    client_t* cli = search_client_by_name(name);
-    if(cli)
+    client_t* target_cli = search_client_by_name_in_channel(name, cli);
+    if(target_cli)
     {
-        if(strcmp(cli->name, name) == 0)
+        if(strcmp(target_cli->name, name) == 0)
         {
-            sprintf(msg, "%s is now an admin\n", cli->name);
+            sprintf(msg, "%s is now an admin\n", target_cli->name);
             send_message_everyone_in_channel(msg, cli, 1);
-            cli->admin = 1;
+            target_cli->admin = 1;
         }
     }
     else{
@@ -604,7 +604,7 @@ void handle_commands(char *cmd, client_t *cli)
         free(msg);
         if(cli->admin)
         {
-            make_admin(cmd+7);
+            make_admin(cmd+7, cli);
         }
         else
         {
@@ -616,7 +616,7 @@ void handle_commands(char *cmd, client_t *cli)
         free(msg);
         if(cli->admin)
         {
-            remove_admin(cmd+13);
+            remove_admin(cmd+13, cli);
         }
         else
         {
@@ -712,7 +712,7 @@ void handle_client(void *arg)
             printf("%s\n", pass);
             if(strcmp(pass, pass_rec) == 0)
             {
-                make_admin(cli->name);
+                cli->admin = 1;
             }
             else
             {
