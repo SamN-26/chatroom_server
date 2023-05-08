@@ -13,18 +13,11 @@
 #define BUFFER_SIZE 2048
 #define NAME_LENGTH 32
 #define MAX_CLIENTS_CHANNEL 10
+#define MAX_CHANNELS 5
 
 static _Atomic unsigned int cli_count = 0;
 static int uid = 10;
 static char* pass = "mlsc2023";
-
-// //Channel Structure
-// typedef struct
-// {
-//     int client_uid[MAX_CLIENTS_CHANNEL];
-
-// };
-
 
 //Client Structure
 typedef struct{
@@ -35,7 +28,19 @@ typedef struct{
     int admin;
     int leave_flag;
     int ignored_by_uids[MAX_CLIENTS];
+    int current_channel_uid;
+    char chn_name[NAME_LENGTH];
 }client_t;
+
+//Channel Structure
+typedef struct
+{
+    client_t *clients[MAX_CLIENTS_CHANNEL];
+    int channel_uid;
+    char name[NAME_LENGTH];
+}channel_t;
+
+channel_t *channels[MAX_CHANNELS];
 
 client_t *clients[MAX_CLIENTS];
 
@@ -84,8 +89,6 @@ void initialize_ignore(client_t* cli)
     }
 }
 
-
-
 void check()
 {
     for(int i = 0; i<MAX_CLIENTS; i++)
@@ -115,6 +118,10 @@ void queue_remove(int uid)
 
 int ignore_check(client_t* cli1, client_t* cli2)
 {
+    if(cli1 == cli2)
+    {
+        return 0;
+    }
     for(int i = 0; i<MAX_CLIENTS; i++)
     {
         if(cli1->ignored_by_uids[i] == cli2->uid)
@@ -125,25 +132,58 @@ int ignore_check(client_t* cli1, client_t* cli2)
     return 0;
 }
 
+channel_t* search_channel_by_uid(int uid)
+{
+    for(int i = 0; i<MAX_CHANNELS; i++)
+    {
+        if(channels[i])
+        {
+            if(channels[i]->channel_uid == uid)
+            {
+                return channels[i];
+            }
+        }
+    }
+    return NULL;
+}
+
 void send_message(char* s, client_t *cli)
 {
     pthread_mutex_lock(&clients_mutex);
 
-    for(int i = 0; i<MAX_CLIENTS; i++)
+    channel_t* chn = search_channel_by_uid(cli->current_channel_uid);
+    if(chn)
     {
-        if(clients[i])
+        //printf("%s\n", chn->name);
+        for(int i = 0; i<MAX_CLIENTS_CHANNEL; i++)
         {
-            if(clients[i]->uid != cli->uid && !(ignore_check(cli, clients[i])))
+            if(chn->clients[i])
             {
-                if(write(clients[i]->sockfd, s, strlen(s)) < 0)
+                if(chn->clients[i]->uid != cli->uid && !(ignore_check(cli, chn->clients[i])))
                 {
-                    perror("ERROR : write to descriptor\n");
-                    break;
+                    printf("%d\n", chn->clients[i]->uid);
+                    if(write(chn->clients[i]->sockfd, s, strlen(s)) < 0)
+                    {
+                        perror("ERROR : write to descriptor\n");
+                        break;
+                    }
                 }
             }
         }
     }
-
+    else
+    {
+        for(int i = 0 ;i<MAX_CLIENTS; i++)
+        {
+            if(clients[i])
+            {
+                if(clients[i]->current_channel_uid == 0 && clients[i]->uid != cli->uid)
+                {
+                    send(clients[i]->sockfd, s, strlen(s), 0);
+                }
+            }
+        }
+    }
     pthread_mutex_unlock(&clients_mutex);
 }
 
@@ -191,54 +231,122 @@ client_t* search_client_by_name(char *name)
     return NULL;
 }
 
-void send_message_everyone(char* s)
+
+client_t* search_client_by_name_in_channel(char *name, client_t* cli)
+{
+    channel_t* channel = search_channel_by_uid(cli->current_channel_uid);
+    if(cli->current_channel_uid == 0)
+    {
+        for(int i = 0; i<MAX_CLIENTS; i++)
+        {
+            if(clients[i])
+            {
+                if(clients[i]->current_channel_uid == 0)
+                {
+                    if(strcmp(clients[i]->name, name) == 0)
+                    {
+                        return clients[i];
+                    }
+                }
+            }
+        }
+    }
+    else if(channel)
+    {
+        for(int i = 0; i<MAX_CLIENTS_CHANNEL; i++)
+        {
+            if(channel->clients[i])
+            {
+                if(strcmp(channel->clients[i]->name, name) == 0)
+                {
+                    return channel->clients[i];
+                }
+            }
+        }
+    }
+    else 
+    {
+        printf("Error 406\n");
+    }
+    return NULL;
+}
+
+void send_message_everyone_in_channel(char* s, client_t* cli, int print)
 {
     pthread_mutex_lock(&clients_mutex);
 
-    for(int i = 0; i<MAX_CLIENTS; i++)
+    channel_t* chn = search_channel_by_uid(cli->current_channel_uid);
+
+    if(chn)
     {
-        if(clients[i])
+        if(print)
         {
-            if(write(clients[i]->sockfd, s, strlen(s)) < 0)
+            printf("%s->%s\n",chn->name, s);
+        }
+
+        for(int i = 0; i<MAX_CLIENTS_CHANNEL; i++)
+        {
+            if(chn->clients[i])
             {
-                perror("ERROR : write to descriptor\n");
-                break;
+                if(write(chn->clients[i]->sockfd, s, strlen(s)) < 0)
+                {
+                    perror("ERROR : write to descriptor\n");
+                    break;
+                }
             }
-            
+        }
+    }
+    else
+    {
+        for(int i = 0 ;i<MAX_CLIENTS; i++)
+        {
+            if(clients[i])
+            {
+                if(clients[i]->current_channel_uid == 0)
+                {
+                    send(clients[i]->sockfd, s, strlen(s), 0);
+                }
+            }
         }
     }
 
     pthread_mutex_unlock(&clients_mutex);
 }
 
-void print_and_send_evryone(char* msg)
+void check_channels()
 {
-    printf("%s", msg);
-    send_message_everyone(msg);
+    for(int i = 0; i<MAX_CHANNELS; i++)
+    {
+        printf("%p\n", channels[i]);
+        if(channels[i])
+            printf("%s\n", channels[i]->name);
+        else 
+            printf("NONE\n");
+    }
 }
 
-void kick_person(char *name)
+void kick_person(char *name, client_t* cli)
 {
     char *msg = malloc(strlen(name)+20);
-    client_t* cli = search_client_by_name(name);
-    if(cli)
+    client_t* kicked_cli = search_client_by_name_in_channel(name, cli);
+    if(kicked_cli)
     {
-        if(cli->admin == 1)
+        if(kicked_cli->admin == 1)
         {
             sprintf(msg, "Cannot Kick an admin\n");
-            print_and_send_evryone(msg);
+            send_message_everyone_in_channel(msg, cli, 1);
             return;
         }
-        if(strcmp(cli->name, name) == 0)
+        if(strcmp(kicked_cli->name, name) == 0)
         {
-            sprintf(msg, "%s has been kicked\n", cli->name);
-            print_and_send_evryone(msg);
-            cli->leave_flag = 1;
+            sprintf(msg, "%s has been kicked\n", kicked_cli->name);
+            kicked_cli->leave_flag = 1;
+            send_message_everyone_in_channel(msg, cli, 1);
         }
     }
     else{
         sprintf(msg, "Name not Found\n");
-        print_and_send_evryone(msg);
+        send_message_everyone_in_channel(msg, cli, 1);
     }
     free(msg);
     return;
@@ -253,13 +361,13 @@ void remove_admin(char *name)
         if(strcmp(cli->name, name) == 0)
         {
             sprintf(msg, "%s is not an admin anymore\n", cli->name);
-            print_and_send_evryone(msg);
+            send_message_everyone_in_channel(msg, cli, 1);
             cli->admin = 0;
         }
     }
     else{
         sprintf(msg, "Name not Found\n");
-        print_and_send_evryone(msg);
+        send_message_everyone_in_channel(msg, cli, 1);
     }
     free(msg);
     return;
@@ -274,13 +382,13 @@ void make_admin(char *name)
         if(strcmp(cli->name, name) == 0)
         {
             sprintf(msg, "%s is now an admin\n", cli->name);
-            print_and_send_evryone(msg);
+            send_message_everyone_in_channel(msg, cli, 1);
             cli->admin = 1;
         }
     }
     else{
         sprintf(msg, "Name not Found\n");
-        print_and_send_evryone(msg);
+        send_message_everyone_in_channel(msg, cli, 1);
     }
     free(msg);
     return;
@@ -290,7 +398,7 @@ void change_name(client_t* cli, char *name)
 {
     char msg[strlen(name) + 20];
     sprintf(msg, "%s's name changed to %s\n", cli->name, name);
-    print_and_send_evryone(msg);
+    send_message_everyone_in_channel(msg, cli, 1);
     bcopy(name, cli->name, strlen(name));
 }
 
@@ -350,6 +458,132 @@ void unmute_client(char* name, client_t *cli)
     }
 }
 
+channel_t* search_channel_by_name(char* channel_name)
+{
+    if(strcmp("general", channel_name) == 0)
+    {
+        return NULL;
+    }
+    for(int i = 0; i<MAX_CHANNELS; i++)
+    {
+        if(channels[i])
+        {
+            if(strcmp(channel_name, channels[i]->name) == 0)
+            {
+                return channels[i];
+            }
+        }
+    }
+    return NULL;
+}
+
+void change_channel(char* channel_name, client_t* cli)
+{
+    pthread_mutex_lock(&clients_mutex);
+
+    channel_t* target_channel = search_channel_by_name(channel_name);
+    channel_t* current_channel = search_channel_by_uid(cli->current_channel_uid);
+    printf("%p\n", target_channel);
+
+    if(strcmp(channel_name, "general") == 0)
+    {
+        cli->current_channel_uid = 0;
+        bzero(cli->chn_name, strlen(cli->chn_name));
+        bcopy("general", cli->chn_name, strlen("general"));
+        for(int i = 0; i<MAX_CLIENTS_CHANNEL; i++)
+        {
+            if(current_channel)
+            {
+                if(current_channel->clients[i]->uid == cli->uid)
+                {
+                    current_channel->clients[i] = NULL;
+                    char *msg = "Joined Channel Successfully\n";
+                    send(cli->sockfd, msg, strlen(msg), 0);
+                    break;
+                }
+            }
+            else
+            {
+                printf("Error 405\n");
+            }
+        }
+        pthread_mutex_unlock(&clients_mutex);   
+        return;
+    }
+    if(target_channel)
+    {
+        if(cli->current_channel_uid == target_channel->channel_uid)
+        {
+            char *msg = "Already in that channel\n";
+            send(cli->sockfd, msg, strlen(msg), 0);
+            pthread_mutex_unlock(&clients_mutex);
+            return;
+        }
+        int flag = 0;
+        cli->current_channel_uid = target_channel->channel_uid;
+        bzero(cli->chn_name, strlen(cli->chn_name));
+        bcopy(target_channel->name, cli->chn_name, strlen(target_channel->name));
+        for(int i = 0; i<MAX_CLIENTS_CHANNEL; i++)
+        {
+            if(!target_channel->clients[i])
+            {
+                target_channel->clients[i] = cli;
+                flag = 1;
+                char *msg = "Joined Channel Successfully\n";
+                send(cli->sockfd, msg, strlen(msg), 0);
+                break;
+            }
+        }
+        if(flag == 0)
+        {
+            char *msg = "Cannot Join Channel : Channel Full\n";
+            send(cli->sockfd, msg, strlen(msg), 0);
+        }
+    }
+    else 
+    {
+        send(cli->sockfd, "Channel Doesn't Exist\n", strlen("Channel Doesn't Exist\n"), 0);
+    }
+
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+void create_channel(char* name, client_t* cli)
+{
+    pthread_mutex_lock(&clients_mutex);
+
+    int flag = 0;
+    for(int i = 0; i<MAX_CHANNELS; i++)
+    {
+        if(!channels[i])
+        {
+            channels[i] = (channel_t*) malloc(sizeof(channel_t));
+            channels[i]->channel_uid = i+1;
+            strcpy(channels[i]->name, name);
+            pthread_mutex_unlock(&clients_mutex);
+            send_message_everyone_in_channel("Channel Created Successfully\n", cli, 1);
+           return;
+        }
+    }
+    char *msg ="Cannot Create another Channel\n";
+    send(cli->sockfd, msg, strlen(msg),0);
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+void print_channel_list(client_t* cli)
+{
+    for(int i = 0; i<MAX_CHANNELS; i++)
+    {
+        if(channels[i])
+        {
+            char msg[strlen(channels[i]->name) + 5];
+            sprintf(msg, "%s\n", channels[i]->name);
+            printf("%s\n", msg);
+            send(cli->sockfd, msg, strlen(msg), 0);
+        }
+    }
+}
+
 void handle_commands(char *cmd, client_t *cli)
 {
     char *msg = extract(cmd);
@@ -358,11 +592,11 @@ void handle_commands(char *cmd, client_t *cli)
         free(msg);
         if(cli->admin)
         {
-            kick_person(cmd+6);
+            kick_person(cmd+6, cli);
         }
         else
         {
-            print_and_send_evryone("Admin Rights Required\n");
+            send_message_everyone_in_channel("Admin Rights Required\n", cli, 1);
         }
     }
     else if(strcmp(msg, "/admin") == 0)
@@ -374,7 +608,7 @@ void handle_commands(char *cmd, client_t *cli)
         }
         else
         {
-            print_and_send_evryone("Admin Rights Required\n");
+            send_message_everyone_in_channel("Admin Rights Required\n", cli, 1);
         }
     }
     else if(strcmp(msg, "/removeadmin")== 0)
@@ -386,7 +620,7 @@ void handle_commands(char *cmd, client_t *cli)
         }
         else
         {
-            print_and_send_evryone("Admin Rights Required\n");
+            send_message_everyone_in_channel("Admin Rights Required\n", cli, 1);
         }
     }
     else if(strcmp(msg, "/name") == 0)
@@ -404,9 +638,29 @@ void handle_commands(char *cmd, client_t *cli)
         free(msg);
         unmute_client(cmd+8, cli);
     }
+    else if(strcmp(msg, "/join") == 0)
+    {
+        free(msg);
+        change_channel(cmd+6, cli);
+    }
+    else if(strcmp(msg, "/create") == 0)
+    {
+        free(msg);
+        if(cli->admin)
+        {
+            create_channel(cmd+8, cli);
+        }
+        else{
+            send_message_everyone_in_channel("Admin Rights Required\n", cli, 1);
+        }
+    }
+    else if(strcmp(msg, "/list") == 0)
+    {
+        print_channel_list(cli);
+    }
     else{
         free(msg);
-        print_and_send_evryone("Wrong Command\n");
+        send_message_everyone_in_channel("Wrong Command\n", cli, 1);
     }
 }
 
@@ -466,7 +720,11 @@ void handle_client(void *arg)
                 send(cli->sockfd, msg,strlen(msg),0);
             }
         }
-    
+
+    //setting up general channel
+    cli->current_channel_uid = 0;
+    bcopy("general", cli->chn_name, strlen("general"));
+
     while(1)
     {
         if(cli->leave_flag)
@@ -476,7 +734,7 @@ void handle_client(void *arg)
         int recieve = recv(cli->sockfd, buffer, BUFFER_SIZE, 0);
         if(strcmp(buffer,"/leave") == 0)
         {
-            sprintf(buffer, "%s has left\n", cli->name);
+            sprintf(buffer, "%s has left the server\n", cli->name);
             printf("%s", buffer);
             send_message(buffer, cli);
             cli->leave_flag = 1;
@@ -489,7 +747,7 @@ void handle_client(void *arg)
                 {
                     break;
                 }
-                printf("%s : %s\n", cli->name,buffer);
+                printf("%s->%s : %s\n", cli->chn_name, cli->name, buffer);
                 char msg[strlen(buffer) + strlen(cli->name) + 3];
                 sprintf(msg, "%s : %s", cli->name, buffer);
                 send_message(msg, cli);
@@ -547,13 +805,12 @@ int main(int argc, char* argv[])
     //Signals
     signal(SIGPIPE, SIG_IGN);
 
-
     //setting up the Server
     error(setsockopt(listenFd, SOL_SOCKET, SO_REUSEADDR, (char *)&option, sizeof(option)), "ERROR: setsockopt\n");
 
     error(bind(listenFd, (struct sockaddr*)&server_addr, sizeof(server_addr)), "ERROR : Bind Error\n");
 
-    error(listen(listenFd, 5), "ERROR : Error on Listen\n");
+    error(listen(listenFd, 5), "ERROR : Error on Listen\n" );
 
     printf("======== WELCOME TO THE CHATROOM ========\n");
 
@@ -568,7 +825,6 @@ int main(int argc, char* argv[])
             perror("Errors\n");
             exit(0);
         }
-
 
         //check for max clients
         if((cli_count + 1) == MAX_CLIENTS)
@@ -586,13 +842,11 @@ int main(int argc, char* argv[])
         cli->uid = uid++;
 
         //Add client to queue
-
         queue_add(cli);
         pthread_create(&thread, NULL, (void *)&handle_client, (void*)cli);
 
         //reduce CPU usage
         sleep(1);
     }
-    
     return EXIT_SUCCESS;
 }
